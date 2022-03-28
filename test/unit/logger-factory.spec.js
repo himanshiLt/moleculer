@@ -161,7 +161,7 @@ describe("Test LoggerFactory", () => {
 				}
 			});
 
-			expect(mockInit).toHaveBeenCalledTimes(2);
+			expect(mockInit).toHaveBeenCalledTimes(4);
 		});
 
 		it("should add multiple appenders by strings", () => {
