@@ -6,7 +6,9 @@ preRun:
 preMerge:
   pattern:
     - "./**/unit/**/*.spec.js"
+    - "test/integration/*.spec.js"
 postMerge:
   pattern: 
     - "./**/unit/**/*.spec.js"
+    - "test/integration/*.spec.js"
 version: 1.0
