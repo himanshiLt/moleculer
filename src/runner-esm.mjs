@@ -1,20 +1,18 @@
 /* moleculer
- * Copyright (c) 2019 MoleculerJS (https://github.com/moleculerjs/moleculer)
+ * Copyright (c) 2021 MoleculerJS (https://github.com/moleculerjs/moleculer)
  * MIT Licensed
  */
 
-"use strict";
-
-const ServiceBroker = require("./service-broker");
-const utils = require("./utils");
-const fs = require("fs");
-const path = require("path");
-const glob = require("glob").sync;
-const _ = require("lodash");
-const Args = require("args");
-const os = require("os");
-const cluster = require("cluster");
-const kleur = require("kleur");
+import ServiceBroker from "./service-broker.js";
+import utils from "./utils.js";
+import fs from "fs";
+import path from "path";
+import glob from "glob";
+import _ from "lodash";
+import Args from "args";
+import os from "os";
+import cluster from "cluster";
+import kleur from "kleur";
 
 const stopSignals = [
 	"SIGHUP",
@@ -48,7 +46,7 @@ const logger = {
 	}
 };
 
-class MoleculerRunner {
+export default class MoleculerRunner {
 	constructor() {
 		this.watchFolders = [];
 
@@ -108,10 +106,10 @@ class MoleculerRunner {
 	/**
 	 * Load environment variables from '.env' file
 	 */
-	loadEnvFile() {
+	async loadEnvFile() {
 		if (this.flags.env || this.flags.envfile) {
 			try {
-				const dotenv = require("dotenv");
+				const dotenv = await import("dotenv");
 
 				if (this.flags.envfile) dotenv.config({ path: this.flags.envfile });
 				else dotenv.config();
@@ -148,7 +146,7 @@ class MoleculerRunner {
 	 * 		- try to load the `moleculer.config.js` file if exist in the cwd
 	 * 		- try to load the `moleculer.config.json` file if exist in the cwd
 	 */
-	loadConfigFile() {
+	async loadConfigFile() {
 		let filePath;
 		// Env vars have priority over the flags
 		if (process.env["MOLECULER_CONFIG"]) {
@@ -159,6 +157,9 @@ class MoleculerRunner {
 			filePath = path.isAbsolute(this.flags.config)
 				? this.flags.config
 				: path.resolve(process.cwd(), this.flags.config);
+		}
+		if (!filePath && fs.existsSync(path.resolve(process.cwd(), "moleculer.config.mjs"))) {
+			filePath = path.resolve(process.cwd(), "moleculer.config.mjs");
 		}
 		if (!filePath && fs.existsSync(path.resolve(process.cwd(), "moleculer.config.js"))) {
 			filePath = path.resolve(process.cwd(), "moleculer.config.js");
@@ -175,18 +176,14 @@ class MoleculerRunner {
 			switch (ext) {
 				case ".json":
 				case ".js":
+				case ".mjs":
 				case ".ts": {
-					const content = require(filePath);
-					return Promise.resolve()
-						.then(() => {
-							if (utils.isFunction(content)) return content.call(this);
-							else return content;
-						})
-						.then(
-							res =>
-								(this.configFile =
-									res.default != null && res.__esModule ? res.default : res)
-						);
+					const mod = await import(filePath.startsWith("/") ? filePath : "/" + filePath);
+					let content = mod.default;
+
+					if (utils.isFunction(content)) content = await content.call(this);
+					this.configFile = content;
+					break;
 				}
 				default:
 					return Promise.reject(new Error(`Not supported file extension: ${ext}`));
@@ -331,7 +328,7 @@ class MoleculerRunner {
 	 *
 	 *
 	 */
-	loadServices() {
+	async loadServices() {
 		this.watchFolders.length = 0;
 		const fileMask = this.flags.mask || "**/*.service.js";
 
@@ -367,50 +364,51 @@ class MoleculerRunner {
 					const skipping = p[0] == "!";
 					if (skipping) p = p.slice(1);
 
-					if (p.startsWith("npm:")) {
-						// Load NPM module
-						this.loadNpmModule(p.slice(4));
+					let files;
+					const svcPath = path.isAbsolute(p) ? p : path.resolve(svcDir, p);
+					// Check is it a directory?
+					if (this.isDirectory(svcPath)) {
+						if (this.config.hotReload) {
+							this.watchFolders.push(svcPath);
+						}
+						files = glob.sync(svcPath + "/" + fileMask, { absolute: true });
+						if (files.length == 0)
+							return this.broker.logger.warn(
+								kleur
+									.yellow()
+									.bold(
+										`There is no service files in directory: '${svcPath}'`
+									)
+							);
+					} else if (this.isServiceFile(svcPath)) {
+						files = [svcPath.replace(/\\/g, "/")];
+					} else if (this.isServiceFile(svcPath + ".service.js")) {
+						files = [svcPath.replace(/\\/g, "/") + ".service.js"];
 					} else {
-						let files;
-						const svcPath = path.isAbsolute(p) ? p : path.resolve(svcDir, p);
-						// Check is it a directory?
-						if (this.isDirectory(svcPath)) {
-							if (this.config.hotReload) {
-								this.watchFolders.push(svcPath);
-							}
-							files = glob(svcPath + "/" + fileMask, { absolute: true });
-							if (files.length == 0)
-								return this.broker.logger.warn(
-									kleur
-										.yellow()
-										.bold(
-											`There is no service files in directory: '${svcPath}'`
-										)
-								);
-						} else if (this.isServiceFile(svcPath)) {
-							files = [svcPath.replace(/\\/g, "/")];
-						} else if (this.isServiceFile(svcPath + ".service.js")) {
-							files = [svcPath.replace(/\\/g, "/") + ".service.js"];
-						} else {
-							// Load with glob
-							files = glob(p, { cwd: svcDir, absolute: true });
-							if (files.length == 0)
-								this.broker.logger.warn(
-									kleur
-										.yellow()
-										.bold(`There is no matched file for pattern: '${p}'`)
-								);
-						}
+						// Load with glob
+						files = glob.sync(p, { cwd: svcDir, absolute: true });
+						if (files.length == 0)
+							this.broker.logger.warn(
+								kleur
+									.yellow()
+									.bold(`There is no matched file for pattern: '${p}'`)
+							);
+					}
 
-						if (files && files.length > 0) {
-							if (skipping)
-								serviceFiles = serviceFiles.filter(f => files.indexOf(f) === -1);
-							else serviceFiles.push(...files);
-						}
+					if (files && files.length > 0) {
+						if (skipping)
+							serviceFiles = serviceFiles.filter(f => files.indexOf(f) === -1);
+						else serviceFiles.push(...files);
 					}
 				});
 
-			_.uniq(serviceFiles).forEach(f => this.broker.loadService(f));
+			await Promise.all(_.uniq(serviceFiles).map(async f => {
+				const mod = await import(f.startsWith("/") ? f : "/" + f);
+				const content = mod.default;
+
+				const svc = this.broker.createService(content);
+				svc.__filename = f;
+			}));
 		}
 	}
 
@@ -456,20 +454,9 @@ class MoleculerRunner {
 	}
 
 	/**
-	 * Load service from NPM module
-	 *
-	 * @param {String} name
-	 * @returns {Service}
-	 */
-	loadNpmModule(name) {
-		let svc = require(name);
-		return this.broker.createService(svc);
-	}
-
-	/**
 	 * Start Moleculer broker
 	 */
-	startBroker() {
+	async startBroker() {
 		this.worker = cluster.worker;
 
 		if (this.worker) {
@@ -482,7 +469,7 @@ class MoleculerRunner {
 		this.broker = new ServiceBroker(Object.assign({}, this.config));
 		this.broker.runner = this;
 
-		this.loadServices();
+		await this.loadServices();
 
 		if (this.watchFolders.length > 0) this.broker.runner.folders = this.watchFolders;
 
@@ -533,5 +520,3 @@ class MoleculerRunner {
 			});
 	}
 }
-
-module.exports = MoleculerRunner;

@@ -1,5 +1,53 @@
 <a name="Unreleased"></a>
-# [Unreleased](https://github.com/moleculerjs/moleculer/compare/v0.14.19...master)
+# [Unreleased](https://github.com/moleculerjs/moleculer/compare/v0.14.21...master)
+
+--------------------------------------------------
+<a name="0.14.21"></a>
+# [0.14.21](https://github.com/moleculerjs/moleculer/compare/v0.14.20...v0.14.21) (2022-04-30)
+
+_20 commits from 2 contributors._
+
+## ESM support [#1063](https://github.com/moleculerjs/moleculer/issues/1063)
+
+This version contains an ESM-based Moleculer Runner. This Runner is able to load ESM configuration file and ESM services. _It can load the CJS services, as well_
+
+**Example usage**
+```
+moleculer-runner-esm --repl services/**/*.service.mjs
+```
+
+Moreover, the `index.js` file is wrapped into `index.mjs`, so you can import internal modules from the core in ESM modules. E.g.:
+
+```js
+import { ServiceBroker, Errors } from "moleculer";
+```
+
+Please note, **the hot-reload function doesn't work with this ESM Runner**. The cause: https://github.com/nodejs/modules/issues/307
+Node maintainers try to solve the missing features (module cache and module dependency tree) with [loaders](https://nodejs.org/api/esm.html#loaders) but this API is not stable yet.
+
+
+## Other Changes
+- `broker.stopping` property is created to indicate that broker is in stopping state.
+
+--------------------------------------------------
+<a name="0.14.20"></a>
+# [0.14.20](https://github.com/moleculerjs/moleculer/compare/v0.14.19...v0.14.20) (2022-04-19)
+
+_52 commits from 8 contributors._
+
+## Dependency logic changed [#1077](https://github.com/moleculerjs/moleculer/issues/1077)
+
+In [mixed architecture](https://moleculer.services/docs/0.14/clustering.html#Mixed-architecture), it's not hard to create a circular service dependency that may cause a dead-lock during the start of Moleculer nodes. The problem is that Moleculer node only sends the local service registry to remote nodes after **all** local services started properly. 
+As of 0.14.20, this behavior has changed. The new logic uses a debounced registry sending method which is triggered every time a local service, that the node manages, has `started()`.  
+Note that the new method generates more [INFO packets](https://github.com/moleculer-framework/protocol/blob/master/4.0/PROTOCOL.md#info), than early versions, during the start of the node. The number of INFO packets depends on the number of the services that the node manages. The debounce timeout, between sending INFO packets, is 1 second.
+
+## Other Changes
+- fix ActionLogger and TransitLogger middlewares.
+- update Datadog Logger using v2 API. [#1056](https://github.com/moleculerjs/moleculer/pull/1056)
+- update dependencies.
+- update d.ts file. [#1064](https://github.com/moleculerjs/moleculer/pull/1064), [#1073](https://github.com/moleculerjs/moleculer/pull/1073)
+- fix pino child logger bindings. [#1075](https://github.com/moleculerjs/moleculer/pull/1075)
+ 
 
 --------------------------------------------------
 <a name="0.14.19"></a>
