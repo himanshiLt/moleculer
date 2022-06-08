@@ -12,5 +12,3 @@ postMerge:
     - "./**/unit/**/*.spec.js"
     - "test/integration/*.spec.js"
 version: 1.0
-parallelism: 4
-splitMode: test
